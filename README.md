@@ -1,6 +1,6 @@
 # Relaydeck
 
-Relaydeck is a **Discord bot** that sends new posts from sources you choose to channels you choose. It began as Tweecord, a Twitter stream experiment. The old stream had hard-coded accounts and could broadcast to every text channel. Relaydeck replaces that with explicit subscriptions, slash commands, a persistent delivery log, and a local dashboard.
+Relaydeck is a **Discord bot** that polls feeds and posts new items to specific channels. It supports RSS/Atom, GitHub releases, Bluesky, and X with your own API access. It was rebuilt from Tweecord, the earlier Twitter-to-Discord experiment.
 
 ![Relaydeck local dashboard with sample data](public/preview.png)
 
@@ -9,9 +9,9 @@ Relaydeck is a **Discord bot** that sends new posts from sources you choose to c
 | Source | Input | Access |
 | --- | --- | --- |
 | RSS / Atom | `https://example.com/feed.xml` | Public HTTPS feed |
-| GitHub releases | `owner/repository` | Public API; optional `GITHUB_TOKEN` |
+| GitHub releases | `owner/repository` | Public API; optional token in dashboard |
 | Bluesky posts | `handle.bsky.social` | Public API |
-| X posts | `username` | Your `X_BEARER_TOKEN` with read access |
+| X posts | `username` | Your bearer token with read access, saved in dashboard |
 
 Many sites, including some Mastodon profiles and YouTube channels, provide RSS feeds. Add those as RSS sources. X is read through the official API; Relaydeck does not scrape accounts or promise free access to X posts.
 
@@ -19,13 +19,16 @@ For each source you can choose a channel, polling interval, include and exclude 
 
 ## Set up the bot
 
+For screenshots and troubleshooting, see the [Windows setup guide](docs/SETUP.md).
+
 1. Install **Node.js 24 or newer** and run `npm install` in this folder.
 2. Create an application and bot in the [Discord Developer Portal](https://discord.com/developers/applications). Copy its bot token and application ID.
 3. Invite it to your server with the `bot` and `applications.commands` scopes. Give it **View Channel**, **Send Messages**, and **Embed Links** in channels where it should post.
-4. Copy `.env.example` to `.env` and fill in `DISCORD_TOKEN` and `DISCORD_CLIENT_ID`. During setup, set `DISCORD_GUILD_ID` to your server ID so slash commands appear immediately. Without it, commands are registered globally and can take time to appear.
-5. Run `npm start`. The bot and local dashboard run in the same process. Open `http://127.0.0.1:4317` on that computer.
+4. Run `npm start` and open `http://127.0.0.1:4317` on that computer. The dashboard starts before the bot connects.
+5. In **API settings**, enter the bot token and application ID. You can also enter one server ID so slash commands update immediately in that server. Without a server ID, commands are registered globally and can take time to appear.
+6. Add a GitHub token if you need a higher API rate limit. Add an X bearer token if you want to follow X accounts. These credentials are entered and changed only in the dashboard.
 
-`.env` and the SQLite database in `data/` are ignored by Git. Keep the bot token, X token, and database private. The dashboard listens on loopback only and is intended for the computer running the bot.
+The SQLite database in `data/` holds subscriptions and credentials and is ignored by Git. Keep that database private. Saved tokens are not returned to the browser after you save them. The dashboard listens on loopback only and is intended for the computer running the bot. If you already used a `.env` file with credentials, Relaydeck imports those values into the database on first start.
 
 ## Commands
 
@@ -40,7 +43,7 @@ For each source you can choose a channel, polling interval, include and exclude 
 
 Use a full ID or its unique first characters from `/source list`. Include and exclude are comma-separated phrases. Include matches when **any** phrase appears in the title or summary; exclude wins if **any** phrase appears. The default interval is 10 minutes, or 60 minutes for X. The allowed range is 5–1440 minutes.
 
-The local dashboard shows source health, recent deliveries, errors, and a **Check now** action. Subscription changes happen in Discord so server permissions are respected.
+The local dashboard manages API credentials and shows source health, recent deliveries, errors, and a **Check now** action. Subscription changes happen in Discord so server permissions are respected.
 
 ## Reliability and limits
 
@@ -49,7 +52,7 @@ The local dashboard shows source health, recent deliveries, errors, and a **Chec
 - Discord delivery uses embeds with mentions disabled. A missing channel or permission error is recorded instead of silently sending elsewhere.
 - RSS feeds must use public HTTPS URLs. The fetcher rejects local network addresses, limits redirects, response size, and request time.
 - GitHub and Bluesky have their own rate limits. X API access and pricing are controlled by X; configure a longer interval if needed.
-- The local dashboard is a monitor for a running bot. It is not a hosted web service and does not need a separate Vercel deployment.
+- The local dashboard runs on the bot computer. It is not a hosted web service and does not need a separate Vercel deployment.
 
 Run `npm test` for parsing, filtering, validation, and persistence checks.
 Run `npm run preview` to inspect the dashboard with sample data without a Discord token.
@@ -60,4 +63,4 @@ Node.js, [discord.js](https://discord.js.org/), [fast-xml-parser](https://github
 
 ## License
 
-The original repository was published under CC0-1.0. See [LICENSE](LICENSE).
+The current code is licensed under [MIT](LICENSE). Earlier Tweecord revisions were published under CC0-1.0.

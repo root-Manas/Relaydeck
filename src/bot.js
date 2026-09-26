@@ -2,19 +2,20 @@ const path = require('node:path');
 const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, MessageFlags,
   SlashCommandBuilder, EmbedBuilder, REST, Routes } = require('discord.js');
 const { openStore } = require('./store');
-const { validateSource, fetchItems, matches } = require('./sources');
+const { validateSource, fetchItems: fetchSourceItems, matches } = require('./sources');
 const { startDashboard } = require('./dashboard');
 const { createPoller } = require('./poller');
-
-const token = process.env.DISCORD_TOKEN;
-const clientId = process.env.DISCORD_CLIENT_ID;
-if (!token || !clientId) {
-  console.error('Set DISCORD_TOKEN and DISCORD_CLIENT_ID in .env before starting Relaydeck.');
-  process.exit(1);
-}
+const { importLegacyEnv } = require('./config');
 
 const store = openStore(path.resolve(process.env.DATA_DIR || 'data'));
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+importLegacyEnv(store);
+let client;
+let connection = 'needs_config';
+let connectionError = '';
+let pollTimer;
+let reconnecting = false;
+let reconnectQueued = false;
+const fetchItems = source => fetchSourceItems(source, store.credentials());
 
 const typeOption = option => option.setName('type').setDescription('Where updates come from').setRequired(true)
   .addChoices({ name: 'RSS / Atom', value: 'rss' }, { name: 'GitHub releases', value: 'github' },
@@ -59,7 +60,7 @@ function sourceForGuild(guildId, prefix) {
 }
 
 function embedFor(item, source) {
-  const embed = new EmbedBuilder().setColor(0xb4443b).setTitle(item.title.slice(0, 256))
+  const embed = new EmbedBuilder().setColor(0x72d4ad).setTitle(item.title.slice(0, 256))
     .setDescription((item.summary || 'Open the original update.').slice(0, 2000))
     .setFooter({ text: `${source.name} · Relaydeck` });
   if (item.url?.startsWith('https://')) embed.setURL(item.url);
@@ -69,6 +70,7 @@ function embedFor(item, source) {
 }
 
 const { pollSource } = createPoller({ store, fetchItems, matches, async deliver(item, source) {
+  if (!client?.isReady()) throw new Error('Discord bot is not connected.');
   const channel = await client.channels.fetch(source.channel_id);
   if (!channel?.isTextBased() || !('send' in channel) || channel.guildId !== source.guild_id)
     throw new Error('Destination channel is unavailable.');
@@ -76,6 +78,7 @@ const { pollSource } = createPoller({ store, fetchItems, matches, async deliver(
 } });
 
 async function pollDue() {
+  if (!client?.isReady()) return;
   for (const source of store.sources().filter(source => source.enabled)) {
     const due = !source.last_checked || Date.now() - Date.parse(source.last_checked) >= source.interval_minutes * 60_000;
     if (!due) continue;
@@ -148,7 +151,7 @@ async function handleSource(interaction) {
   }
 }
 
-client.on('interactionCreate', async interaction => {
+async function handleInteraction(interaction) {
   if (!interaction.isChatInputCommand() || !interaction.guildId) return;
   try {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -162,7 +165,7 @@ client.on('interactionCreate', async interaction => {
     }
     if (interaction.commandName === 'relay-help') return interaction.editReply(
       '`/source add` RSS/Atom, GitHub releases, or Bluesky → a chosen channel.\n'
-      + '`/source preview` inspect updates first. `/source list` shows IDs. X needs `X_BEARER_TOKEN`.\n'
+      + '`/source preview` inspect updates first. `/source list` shows IDs. X API access is configured in the local dashboard.\n'
       + '`/source update`, `pause`, `resume`, `check`, `remove` manage subscriptions.\n'
       + '`/relay-status` shows recent deliveries. Existing posts are skipped when a source is added.');
   } catch (error) {
@@ -170,24 +173,65 @@ client.on('interactionCreate', async interaction => {
     if (interaction.deferred || interaction.replied) await interaction.editReply(message);
     else await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
   }
-});
+}
 
-client.once('clientReady', async () => {
-  console.log(`Relaydeck signed in as ${client.user.tag}`);
+function botStatus() {
+  return { bot: client?.isReady() ? client.user.tag : 'Not connected',
+    guilds: client?.isReady() ? client.guilds.cache.size : 0,
+    connection, connectionError };
+}
+
+async function connectBot() {
+  if (reconnecting) { reconnectQueued = true; return; }
+  reconnecting = true;
   try {
-    const rest = new REST({ version: '10' }).setToken(token);
-    const route = process.env.DISCORD_GUILD_ID
-      ? Routes.applicationGuildCommands(clientId, process.env.DISCORD_GUILD_ID)
-      : Routes.applicationCommands(clientId);
-    await rest.put(route, { body: commands });
-    console.log(`Commands registered ${process.env.DISCORD_GUILD_ID ? 'for development server' : 'globally'}.`);
-  } catch (error) { console.error(`Command registration failed: ${compactError(error)}`); }
-  startDashboard(store, () => ({ bot: client.user.tag, guilds: client.guilds.cache.size }), pollSource);
-  await pollDue();
-  const timer = setInterval(pollDue, 30_000); timer.unref();
-});
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (client) { client.destroy(); client = null; }
+    const token = store.getSetting('discordToken');
+    const clientId = store.getSetting('clientId');
+    const guildId = store.getSetting('guildId');
+    connectionError = '';
+    if (!token || !clientId) { connection = 'needs_config'; return; }
+    connection = 'connecting';
+    const next = new Client({ intents: [GatewayIntentBits.Guilds] });
+    client = next;
+    next.on('interactionCreate', handleInteraction);
+    next.on('error', error => { connectionError = compactError(error); console.error(`Discord client: ${connectionError}`); });
+    next.once('clientReady', async () => {
+      if (client !== next) return;
+      connection = 'connected';
+      console.log(`Relaydeck signed in as ${next.user.tag}`);
+      try {
+        const rest = new REST({ version: '10' }).setToken(token);
+        const route = guildId ? Routes.applicationGuildCommands(clientId, guildId) : Routes.applicationCommands(clientId);
+        await rest.put(route, { body: commands });
+        console.log(`Commands registered ${guildId ? 'for the selected server' : 'globally'}.`);
+      } catch (error) { connectionError = `Command registration: ${compactError(error)}`; console.error(connectionError); }
+      await pollDue();
+      if (client === next) { pollTimer = setInterval(pollDue, 30_000); pollTimer.unref(); }
+    });
+    await next.login(token);
+  } catch (error) {
+    connection = 'error'; connectionError = compactError(error);
+    console.error(`Discord login failed: ${connectionError}`);
+    if (client) { client.destroy(); client = null; }
+  } finally {
+    reconnecting = false;
+    if (reconnectQueued) { reconnectQueued = false; await connectBot(); }
+  }
+}
 
-client.on('error', error => console.error(`Discord client: ${compactError(error)}`));
-process.once('SIGINT', () => { store.close(); client.destroy(); process.exit(0); });
-process.once('SIGTERM', () => { store.close(); client.destroy(); process.exit(0); });
-client.login(token).catch(error => { console.error(`Login failed: ${compactError(error)}`); process.exitCode = 1; store.close(); });
+startDashboard(store, botStatus, async source => {
+  if (!client?.isReady()) throw new Error('Connect the Discord bot before checking sources.');
+  return pollSource(source);
+}, changed => {
+  if (changed.some(key => ['discordToken', 'clientId', 'guildId'].includes(key))) return connectBot();
+});
+connectBot();
+
+function shutdown() {
+  if (pollTimer) clearInterval(pollTimer);
+  client?.destroy(); store.close(); process.exit(0);
+}
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);

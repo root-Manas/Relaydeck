@@ -12,5 +12,6 @@ const entries = [
   { status: 'seeded', title: 'Older post, saved without sending', source_name: 'Field notes', url: 'https://bsky.app/', created_at: now }
 ];
 startDashboard({ sources: () => sources, recent: () => entries, stats: () => ({ sources: 3, delivered: 128, failed: 0 }),
-  source: id => sources.find(source => source.id === id) }, () => ({ bot: 'Relaydeck (preview)', guilds: 1 }),
+  configStatus: () => ({ clientId: '118034918194000000', guildId: '118034918194000001', discordTokenSet: true, githubTokenSet: true, xTokenSet: false }),
+  source: id => sources.find(source => source.id === id) }, () => ({ bot: 'Relaydeck (preview)', guilds: 1, connection: 'connected', connectionError: '' }),
   async () => ({ seeded: 0, delivered: 0, filtered: 0 }));

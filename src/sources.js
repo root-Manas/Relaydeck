@@ -111,9 +111,9 @@ function parseFeed(xml, baseUrl = 'https://example.com/') {
   });
 }
 
-async function fetchGithub(repo) {
+async function fetchGithub(repo, credentials = {}) {
   const headers = { accept: 'application/vnd.github+json', 'user-agent': 'Relaydeck/1.0', 'x-github-api-version': '2022-11-28' };
-  if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  if (credentials.githubToken) headers.authorization = `Bearer ${credentials.githubToken}`;
   const response = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=20`,
     { headers, signal: AbortSignal.timeout(12000) });
   const data = JSON.parse(await readLimited(response));
@@ -138,9 +138,9 @@ async function fetchBluesky(handle) {
 }
 
 const xUserIds = new Map();
-async function fetchX(username) {
-  if (!process.env.X_BEARER_TOKEN) throw new Error('Set X_BEARER_TOKEN to follow X accounts. X API read access is required.');
-  const headers = { authorization: `Bearer ${process.env.X_BEARER_TOKEN}`, 'user-agent': 'Relaydeck/1.0' };
+async function fetchX(username, credentials = {}) {
+  if (!credentials.xToken) throw new Error('Add an X API token in dashboard settings to follow X accounts.');
+  const headers = { authorization: `Bearer ${credentials.xToken}`, 'user-agent': 'Relaydeck/1.0' };
   let id = xUserIds.get(username.toLowerCase());
   if (!id) {
     const lookup = await fetch(`https://api.x.com/2/users/by/username/${encodeURIComponent(username)}`,
@@ -159,11 +159,11 @@ async function fetchX(username) {
     summary: String(post.text || '').slice(0, 1000), published: post.created_at }));
 }
 
-async function fetchItems(source) {
+async function fetchItems(source, credentials = {}) {
   if (source.type === 'rss') return fetchFeed(source.value);
-  if (source.type === 'github') return fetchGithub(source.value);
+  if (source.type === 'github') return fetchGithub(source.value, credentials);
   if (source.type === 'bluesky') return fetchBluesky(source.value);
-  if (source.type === 'x') return fetchX(source.value);
+  if (source.type === 'x') return fetchX(source.value, credentials);
   throw new Error('Unknown source type.');
 }
 

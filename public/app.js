@@ -27,7 +27,11 @@ async function refresh() {
     const response = await fetch('/api/state', { cache: 'no-store' });
     if (!response.ok) throw new Error(`Dashboard returned ${response.status}`);
     const state = await response.json();
-    $('#bot-name').textContent = `${state.bot} · ${state.guilds} server${state.guilds === 1 ? '' : 's'}`;
+    const connected = state.connection === 'connected' || !state.connection && state.bot !== 'Not connected';
+    $('#bot-name').textContent = connected ? `${state.bot} · ${state.guilds} server${state.guilds === 1 ? '' : 's'}`
+      : state.connection === 'connecting' ? 'Connecting to Discord…' : 'Not connected';
+    $('#bot-detail').textContent = state.connectionError || (connected ? 'Bot is online. Add sources with /source in Discord.'
+      : 'Add a bot token and application ID in API settings.');
     $('#stat-sources').textContent = state.stats.sources;
     $('#stat-delivered').textContent = state.stats.delivered;
     $('#stat-failed').textContent = state.stats.failed;
@@ -37,7 +41,59 @@ async function refresh() {
   } catch (error) { toast(error.message); }
 }
 
+function showConfig(config) {
+  $('#client-id').value = config.clientId || '';
+  $('#guild-id').value = config.guildId || '';
+  for (const [key, name] of [['discordToken', 'discord-token'], ['githubToken', 'github-token'], ['xToken', 'x-token']]) {
+    const saved = !!config[`${key}Set`];
+    $(`#${name}-status`).textContent = saved ? 'Saved locally' : 'Not saved';
+    document.querySelector(`[data-clear="${key}"]`).disabled = !saved;
+  }
+}
+
+async function refreshConfig() {
+  const response = await fetch('/api/config', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Settings returned ${response.status}`);
+  showConfig(await response.json());
+}
+
+async function saveConfig(input) {
+  const response = await fetch('/api/config', { method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-relaydeck': 'dashboard' }, body: JSON.stringify(input) });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Settings could not be saved.');
+  showConfig(data);
+  return data;
+}
+
+$('#config-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = $('#config-form button[type=submit]'); button.disabled = true;
+  const input = { clientId: $('#client-id').value, guildId: $('#guild-id').value };
+  for (const [key, name] of [['discordToken', 'discord-token'], ['githubToken', 'github-token'], ['xToken', 'x-token']]) {
+    if ($(`#${name}`).value.trim()) input[key] = $(`#${name}`).value.trim();
+  }
+  try {
+    await saveConfig(input);
+    for (const name of ['discord-token', 'github-token', 'x-token']) $(`#${name}`).value = '';
+    $('#config-message').textContent = 'Settings saved. Connection status will update above.';
+    await refresh();
+  } catch (error) { $('#config-message').textContent = error.message; }
+  finally { button.disabled = false; }
+});
+
 document.addEventListener('click', async event => {
+  const clear = event.target.closest('[data-clear]');
+  if (clear) {
+    clear.disabled = true;
+    try {
+      await saveConfig({ [clear.dataset.clear]: null });
+      $(`#${{ discordToken: 'discord-token', githubToken: 'github-token', xToken: 'x-token' }[clear.dataset.clear]}`).value = '';
+      $('#config-message').textContent = 'Credential removed.';
+      await refresh();
+    } catch (error) { $('#config-message').textContent = error.message; clear.disabled = false; }
+    return;
+  }
   const button = event.target.closest('[data-check]');
   if (!button) return;
   button.disabled = true; button.textContent = 'Checking…';
@@ -51,4 +107,5 @@ document.addEventListener('click', async event => {
 });
 
 refresh();
+refreshConfig().catch(error => toast(error.message));
 setInterval(refresh, 30_000);

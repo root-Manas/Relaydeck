@@ -24,10 +24,22 @@ function openStore(dataDir) {
     );
     CREATE INDEX IF NOT EXISTS sources_due ON sources(enabled,last_checked);
     CREATE INDEX IF NOT EXISTS entries_created ON entries(created_at DESC);
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `);
+  const setting = key => db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value || '';
   const now = () => new Date().toISOString();
   return {
     db,
+    getSetting: setting,
+    setSetting(key, value) {
+      if (!['discordToken', 'clientId', 'guildId', 'githubToken', 'xToken', 'legacyImported'].includes(key)) throw new Error('Unknown setting.');
+      if (!value) db.prepare('DELETE FROM settings WHERE key=?').run(key);
+      else db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, value);
+    },
+    credentials: () => ({ githubToken: setting('githubToken'), xToken: setting('xToken') }),
+    configStatus: () => ({ clientId: setting('clientId'), guildId: setting('guildId'),
+      discordTokenSet: !!setting('discordToken'), githubTokenSet: !!setting('githubToken'),
+      xTokenSet: !!setting('xToken') }),
     sources: guildId => guildId ? db.prepare('SELECT * FROM sources WHERE guild_id=? ORDER BY created_at DESC').all(guildId)
       : db.prepare('SELECT * FROM sources ORDER BY created_at DESC').all(),
     source: id => db.prepare('SELECT * FROM sources WHERE id=?').get(id),
