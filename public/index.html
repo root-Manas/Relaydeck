@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f3f0e9">
+  <title>Relaydeck / local dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="logo" href="/">relaydeck<span>.</span></a><span class="top-right"><i class="dot"></i> LOCAL DASHBOARD</span></header>
+  <main>
+    <section class="hero"><div class="hero-main"><p class="eyebrow">DISCORD BOT / CONTROL ROOM</p><h1>Make room for<br><em>the updates that matter.</em></h1><p>Feeds, releases, and posts go to the channels you choose. Everything else stays out of the way.</p></div><div class="hero-aside"><span>01 / RUNNING LOCALLY</span><p id="bot-name">Connecting to bot…</p><small>Set up sources with <code>/source add</code> in Discord. Use this page to watch deliveries and run checks.</small></div></section>
+    <section class="metrics" aria-label="Overview"><div><span>01 / SOURCES</span><strong id="stat-sources">—</strong></div><div><span>02 / SENT</span><strong id="stat-delivered">—</strong></div><div><span>03 / NEEDS ATTENTION</span><strong id="stat-failed">—</strong></div><div><span>04 / SERVERS</span><strong id="stat-guilds">—</strong></div></section>
+    <section class="section"><div class="section-head"><div><p class="eyebrow">SUBSCRIPTIONS</p><h2>Your sources<span>.</span></h2></div><p>Use <code>/source add</code>, <code>/source update</code>, and <code>/source pause</code> in Discord to manage these.</p></div><div id="sources" class="source-list"><p class="empty">Loading sources…</p></div></section>
+    <section class="section"><div class="section-head"><div><p class="eyebrow">DELIVERY LOG</p><h2>What happened<span>.</span></h2></div><p>Recent posts, filtered items, and failed deliveries. This log stays on your machine.</p></div><div id="entries" class="entry-list"><p class="empty">Loading activity…</p></div></section>
+    <section class="guide"><p class="eyebrow">START HERE</p><div><h2>Four ways in.</h2><ol><li><strong>RSS / Atom</strong><span>Any public HTTPS feed, including many blogs and Mastodon profiles.</span></li><li><strong>GitHub releases</strong><span>Follow a repository by typing <code>owner/repo</code>.</span></li><li><strong>Bluesky</strong><span>Follow public posts from a handle such as <code>example.bsky.social</code>.</span></li><li><strong>X posts</strong><span>Follow a username through the official X API. Requires your own read-enabled bearer token.</span></li></ol></div></section>
+  </main>
+  <footer><span>RELAYDECK / LOCAL FIRST</span><span>Created by <a href="https://github.com/root-Manas">Manas ↗</a></span></footer>
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
